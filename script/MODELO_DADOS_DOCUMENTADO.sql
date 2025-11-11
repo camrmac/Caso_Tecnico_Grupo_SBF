@@ -1,0 +1,497 @@
+-- =====================================================
+-- 🏗️ ARQUITETURA GERAL
+-- =====================================================
+
+/*
+Este banco de dados segue a arquitetura Medallion com duas camadas:
+
+1. TRUSTED (Bronze/Raw): Dados brutos normalizados e validados
+   - Estrutura de dados source-of-truth
+   - Integridade referencial garantida
+   - Dados históricos completos
+   - Conformidade LGPD (dados PII separados)
+
+2. REFINED (Silver/Curated): Dados agregados para análise
+   - Métricas de negócio pré-calculadas
+   - Performance otimizada para consumo
+   - Tabelas desnormalizadas
+   - Pronto para BI e dashboards
+
+FLUXO DE DADOS:
+CSV Files → Trusted (validação) → Refined (agregação) → Consumo (BI)
+*/
+
+-- =====================================================
+-- SCHEMA: trusted
+-- =====================================================
+
+-- -----------------------------------------------------
+-- Tabela: trusted.marca
+-- -----------------------------------------------------
+-- Descrição: Catálogo de marcas de produtos
+-- Granularidade: Uma linha por marca
+-- Relacionamentos: 
+--   - marca ← produto (1:N)
+--   - marca ← meta (1:N)
+-- -----------------------------------------------------
+-- Campos:
+--   id              : Identificador único da marca (PK)
+--   nome            : Nome da marca (ex: "Nike", "Adidas")
+--   criado_em       : Timestamp de criação do registro
+--   atualizado_em   : Timestamp da última atualização
+-- -----------------------------------------------------
+-- Exemplo de registro:
+-- | id | nome    | criado_em           | atualizado_em       |
+-- |----|---------|---------------------|---------------------|
+-- | 1  | Nike    | 2024-01-01 10:00:00 | 2024-01-01 10:00:00 |
+-- -----------------------------------------------------
+
+-- -----------------------------------------------------
+-- Tabela: trusted.produto
+-- -----------------------------------------------------
+-- Descrição: Catálogo completo de produtos
+-- Granularidade: Uma linha por produto
+-- Relacionamentos:
+--   - produto → marca (N:1)
+--   - produto ← pedido_item (1:N)
+-- -----------------------------------------------------
+-- Campos:
+--   id              : Identificador único do produto (PK)
+--   id_marca        : FK para marca (qual marca fabrica este produto)
+--   nome            : Nome do produto
+--   descricao       : Descrição detalhada do produto
+--   categoria       : Categoria do produto (ex: "Tênis", "Camiseta")
+--   criado_em       : Timestamp de criação do registro
+--   atualizado_em   : Timestamp da última atualização
+-- -----------------------------------------------------
+-- Índices:
+--   - idx_produto_marca : Performance em JOINs com marca
+-- -----------------------------------------------------
+-- Exemplo de registro:
+-- | id | id_marca | nome              | categoria | criado_em           |
+-- |----|----------|-------------------|-----------|---------------------|
+-- | 10 | 1        | Tênis Nike Air Max| Tênis     | 2024-01-01 10:00:00 |
+-- -----------------------------------------------------
+
+-- -----------------------------------------------------
+-- Tabela: trusted.data (Dimensão Temporal)
+-- -----------------------------------------------------
+-- Descrição: Dimensão de datas para análises temporais
+-- Granularidade: Uma linha por dia
+-- Relacionamentos:
+--   - data ← pedido (1:N)
+-- Propósito: Facilitar agregações por período (ano, mês, trimestre)
+-- -----------------------------------------------------
+-- Campos:
+--   data            : Data (PK)
+--   ano             : Ano extraído da data (ex: 2024)
+--   mes             : Mês extraído da data (1-12)
+--   dia             : Dia extraído da data (1-31)
+--   descricao       : Descrição legível (ex: "Segunda-feira, 01 Janeiro 2024")
+-- -----------------------------------------------------
+-- Exemplo de registro:
+-- | data       | ano  | mes | dia | descricao                       |
+-- |------------|------|-----|-----|---------------------------------|
+-- | 2024-01-01 | 2024 | 1   | 1   | Segunda-feira, 01 Janeiro 2024  |
+-- -----------------------------------------------------
+
+-- -----------------------------------------------------
+-- Tabela: trusted.cliente_pii
+-- -----------------------------------------------------
+-- Descrição: Dados pessoais identificáveis (PII) dos clientes
+-- ⚠️ LGPD: Acesso restrito e auditado
+-- Granularidade: Uma linha por cliente
+-- Relacionamentos:
+--   - cliente_pii → cliente_pseudo (1:1)
+-- -----------------------------------------------------
+-- Campos:
+--   cliente_id      : Identificador único do cliente (PK)
+--   nome_full       : Nome completo do cliente
+--   cpf             : CPF do cliente (11 dígitos)
+--   email           : Email do cliente
+--   telefone        : Telefone do cliente
+--   endereco        : Endereço completo (JSONB)
+--   criado_em       : Timestamp de criação do registro
+-- -----------------------------------------------------
+-- Segurança:
+--   - Acesso restrito via permissões do banco
+--   - Dados não utilizados em análises
+--   - Mantido apenas para compliance e auditoria
+-- -----------------------------------------------------
+
+-- -----------------------------------------------------
+-- Tabela: trusted.cliente_pseudo
+-- -----------------------------------------------------
+-- Descrição: Dados pseudonimizados de clientes para análises
+-- Propósito: Permitir análises sem expor PII (LGPD compliant)
+-- Granularidade: Uma linha por cliente
+-- Relacionamentos:
+--   - cliente_pseudo → cliente_pii (1:1)
+--   - cliente_pseudo ← pedido (1:N)
+-- -----------------------------------------------------
+-- Campos:
+--   cliente_id        : FK para cliente_pii
+--   cliente_id_hash   : Hash SHA-256 do cliente_id (usado em análises)
+-- -----------------------------------------------------
+-- Exemplo de uso:
+--   Todas as análises devem usar cliente_id_hash ao invés de 
+--   dados identificáveis do cliente_pii
+-- -----------------------------------------------------
+
+-- -----------------------------------------------------
+-- Tabela: trusted.pedido
+-- -----------------------------------------------------
+-- Descrição: Pedidos realizados pelos clientes
+-- Granularidade: Uma linha por pedido
+-- Relacionamentos:
+--   - pedido → data (N:1)
+--   - pedido → cliente_pseudo (N:1)
+--   - pedido ← pedido_item (1:N)
+-- -----------------------------------------------------
+-- Campos:
+--   id                : Identificador único do pedido (PK)
+--   data              : Data do pedido (FK para dimensão data)
+--   status            : Status do pedido (FINALIZADO, CANCELADO)
+--   sgl_uf_entrega    : Sigla UF de entrega (ex: SP, RJ, MG)
+--   vlr_total         : Valor total do pedido (inclui todos os itens)
+--   cliente_id_hash   : Hash do cliente (FK para cliente_pseudo)
+--   criado_em         : Timestamp de criação do registro
+--   atualizado_em     : Timestamp da última atualização
+-- -----------------------------------------------------
+-- Índices:
+--   - idx_pedido_data_uf : Performance em análises por período e região
+-- -----------------------------------------------------
+-- Constraints:
+--   - chk_pedido_sgl_uf_entrega : UF deve ter exatamente 2 letras maiúsculas
+-- -----------------------------------------------------
+-- Regras de Negócio:
+--   1. vlr_total = soma dos itens não cancelados (flg_cancelado = 'N')
+--   2. Pedidos cancelados têm status = 'CANCELADO'
+--   3. Pedidos sem UF são entregas não físicas ou em processamento
+-- -----------------------------------------------------
+-- Exemplo de registro:
+-- | id  | data       | status     | sgl_uf_entrega | vlr_total |
+-- |-----|------------|------------|----------------|-----------|
+-- | 100 | 2024-01-15 | FINALIZADO | SP             | 299.90    |
+-- -----------------------------------------------------
+
+-- -----------------------------------------------------
+-- Tabela: trusted.pedido_item
+-- -----------------------------------------------------
+-- Descrição: Itens individuais de cada pedido
+-- Granularidade: Uma linha por item de pedido
+-- Relacionamentos:
+--   - pedido_item → pedido (N:1)
+--   - pedido_item → produto (N:1)
+-- -----------------------------------------------------
+-- Campos:
+--   id              : Identificador único do item (PK)
+--   id_pedido       : FK para pedido (qual pedido contém este item)
+--   id_produto      : FK para produto (qual produto foi vendido)
+--   flg_cancelado   : Item cancelado? (S/N)
+--   qtd_produto     : Quantidade vendida deste produto
+--   vlr_unitario    : Valor unitário do produto neste pedido
+-- -----------------------------------------------------
+-- Índices:
+--   - idx_pedido_item_produto : Performance em análises de produtos
+-- -----------------------------------------------------
+-- Regras de Negócio:
+--   1. Item cancelado (flg_cancelado = 'S') não conta no vlr_total do pedido
+--   2. Valor linha = qtd_produto * vlr_unitario (se não cancelado)
+-- -----------------------------------------------------
+-- Exemplo de registro:
+-- | id  | id_pedido | id_produto | flg_cancelado | qtd_produto | vlr_unitario |
+-- |-----|-----------|------------|---------------|-------------|--------------|
+-- | 500 | 100       | 10         | N             | 2           | 149.95       |
+-- -----------------------------------------------------
+
+-- -----------------------------------------------------
+-- Tabela: trusted.meta
+-- -----------------------------------------------------
+-- Descrição: Metas de vendas por marca e período
+-- Granularidade: Uma linha por marca/mês/ano
+-- Relacionamentos:
+--   - meta → marca (N:1)
+-- -----------------------------------------------------
+-- Campos:
+--   ano             : Ano da meta (parte da PK composta)
+--   mes             : Mês da meta (1-12) (parte da PK composta)
+--   id_marca        : FK para marca (parte da PK composta)
+--   valor           : Valor da meta de vendas para o período
+--   criado_em       : Timestamp de criação do registro
+--   atualizado_em   : Timestamp da última atualização
+-- -----------------------------------------------------
+-- Chave Primária: (ano, mes, id_marca)
+--   Garante uma única meta por marca/período
+-- -----------------------------------------------------
+-- Exemplo de registro:
+-- | ano  | mes | id_marca | valor      |
+-- |------|-----|----------|------------|
+-- | 2024 | 1   | 1        | 100000.00  |
+-- -----------------------------------------------------
+
+-- -----------------------------------------------------
+-- Tabela: trusted.log_ingestao
+-- -----------------------------------------------------
+-- Descrição: Log de auditoria de cargas de dados
+-- Propósito: Rastreabilidade e governança
+-- Granularidade: Uma linha por execução de carga
+-- -----------------------------------------------------
+-- Campos:
+--   id                : Identificador único do log (PK)
+--   tabela            : Nome da tabela carregada
+--   data_ingestao     : Timestamp da carga
+--   usuario           : Usuário que executou a carga
+--   qtd_registros     : Quantidade de registros inseridos
+-- -----------------------------------------------------
+-- Exemplo de registro:
+-- | id | tabela         | data_ingestao       | usuario  | qtd_registros |
+-- |----|----------------|---------------------|----------|---------------|
+-- | 1  | trusted.pedido | 2024-01-01 10:00:00 | postgres | 1500          |
+-- -----------------------------------------------------
+
+-- -----------------------------------------------------
+-- Tabela: trusted.dicionario_de_dados
+-- -----------------------------------------------------
+-- Descrição: Dicionário de dados do projeto
+-- Propósito: Documentação inline das colunas
+-- -----------------------------------------------------
+-- Campos:
+--   tabela          : Nome da tabela
+--   coluna          : Nome da coluna
+--   descricao       : Descrição do campo
+--   exemplo         : Exemplo de valor
+-- -----------------------------------------------------
+
+-- =====================================================
+-- SCHEMA: refined
+-- =====================================================
+
+-- -----------------------------------------------------
+-- Tabela: refined.mais_vendidos_mensal_estado
+-- -----------------------------------------------------
+-- Descrição: Ranking de produtos mais vendidos por estado/mês
+-- Granularidade: Uma linha por produto/estado/mês
+-- Atualização: Recriada a cada execução do pipeline
+-- Consumo: Dashboards de Top Produtos, Análise Regional
+-- -----------------------------------------------------
+-- Campos:
+--   mes_ano         : Primeiro dia do mês de referência
+--   sgl_uf_entrega  : Estado (UF) de entrega
+--   id_produto      : ID do produto
+--   nome_produto    : Nome do produto
+--   total_qtd       : Quantidade total vendida no período
+--   posicao         : Ranking dentro do estado/mês (1 = mais vendido)
+-- -----------------------------------------------------
+-- Chave Primária: (mes_ano, sgl_uf_entrega, id_produto)
+-- -----------------------------------------------------
+-- Regras de Cálculo:
+--   - Considera apenas itens NÃO cancelados (flg_cancelado = 'N')
+--   - Ranking usando RANK() (pode haver empates)
+--   - Ordenação por quantidade (DESC)
+-- -----------------------------------------------------
+-- Casos de Uso:
+--   1. Identificar produtos mais populares por região
+--   2. Comparar performance de produtos entre estados
+--   3. Análise de sazonalidade por produto/região
+-- -----------------------------------------------------
+-- Exemplo de query:
+--   -- Top 5 produtos mais vendidos em SP em Janeiro/2024
+--   SELECT * FROM refined.mais_vendidos_mensal_estado
+--   WHERE mes_ano = '2024-01-01' 
+--     AND sgl_uf_entrega = 'SP' 
+--     AND posicao <= 5
+--   ORDER BY posicao;
+-- -----------------------------------------------------
+
+-- -----------------------------------------------------
+-- Tabela: refined.performance_mensal_marca
+-- -----------------------------------------------------
+-- Descrição: Performance de vendas vs meta por marca
+-- Granularidade: Uma linha por marca/mês/ano
+-- Atualização: Recriada a cada execução do pipeline
+-- Consumo: Dashboards Gerenciais, OKRs, Análise de Metas
+-- -----------------------------------------------------
+-- Campos:
+--   ano                       : Ano de referência
+--   mes                       : Mês de referência (1-12)
+--   id                        : ID da marca
+--   nome_marca                : Nome da marca
+--   vlr_total_vendido         : Valor total vendido pela marca no período
+--   vlr_meta                  : Meta de vendas da marca (se definida)
+--   perc_atingimento_meta     : Percentual de atingimento (vendido/meta * 100)
+-- -----------------------------------------------------
+-- Regras de Cálculo:
+--   - vlr_total_vendido = soma de todos os pedidos da marca
+--   - vlr_meta vem de trusted.meta (pode ser NULL se não houver meta)
+--   - perc_atingimento_meta = (vlr_total_vendido / vlr_meta) * 100
+-- -----------------------------------------------------
+-- Casos de Uso:
+--   1. Acompanhamento de metas mensais
+--   2. Identificar marcas com melhor/pior performance
+--   3. Análise de tendências de vendas por marca
+-- -----------------------------------------------------
+-- Exemplo de query:
+--   -- Marcas que bateram a meta em Janeiro/2024
+--   SELECT nome_marca, vlr_total_vendido, vlr_meta, perc_atingimento_meta
+--   FROM refined.performance_mensal_marca
+--   WHERE ano = 2024 AND mes = 1 AND perc_atingimento_meta >= 100
+--   ORDER BY perc_atingimento_meta DESC;
+-- -----------------------------------------------------
+
+-- -----------------------------------------------------
+-- Tabela: refined.kpis_vendas
+-- -----------------------------------------------------
+-- Descrição: KPIs consolidados de vendas mensais
+-- Granularidade: Uma linha por mês
+-- Atualização: Recriada a cada execução do pipeline
+-- Consumo: Dashboards Executivos, Análise de Tendências
+-- -----------------------------------------------------
+-- Campos:
+--   mes_ano                   : Primeiro dia do mês de referência
+--   qtd_pedidos               : Total de pedidos no período
+--   receita_bruta             : Receita total (soma de vlr_total)
+--   ticket_medio              : Ticket médio (receita / qtd_pedidos)
+--   qtd_cancelamentos         : Quantidade de pedidos cancelados
+--   pct_cancelamento          : Taxa de cancelamento (%)
+--   qtd_produtos_distintos    : Quantidade de produtos diferentes vendidos
+--   qtd_itens_vendidos        : Quantidade total de itens vendidos
+-- -----------------------------------------------------
+-- Casos de Uso:
+--   1. Análise de saúde do negócio
+--   2. Identificação de tendências (crescimento, queda)
+--   3. Monitoramento de cancelamentos
+-- -----------------------------------------------------
+
+-- -----------------------------------------------------
+-- Tabela: refined.analise_cancelamentos
+-- -----------------------------------------------------
+-- Descrição: Análise detalhada de cancelamentos
+-- Granularidade: Uma linha por marca/estado/mês
+-- Propósito: Identificar padrões de cancelamento
+-- -----------------------------------------------------
+-- Campos:
+--   mes_ano                     : Mês de referência
+--   sgl_uf_entrega              : Estado
+--   marca                       : Nome da marca
+--   qtd_pedidos_cancelados      : Total de pedidos cancelados
+--   vlr_total_cancelado         : Valor total de pedidos cancelados
+--   qtd_itens_cancelados        : Total de itens cancelados
+--   ticket_medio_cancelado      : Ticket médio dos cancelamentos
+-- -----------------------------------------------------
+-- Casos de Uso:
+--   1. Identificar problemas por região
+--   2. Detectar problemas com marcas específicas
+--   3. Análise de perda de receita
+-- -----------------------------------------------------
+
+-- -----------------------------------------------------
+-- Tabela: refined.vendas_categoria_variacao
+-- -----------------------------------------------------
+-- Descrição: Análise de crescimento/queda por categoria
+-- Granularidade: Uma linha por categoria/mês
+-- Propósito: Identificar tendências por categoria
+-- -----------------------------------------------------
+-- Campos:
+--   mes_ano               : Mês de referência
+--   categoria             : Nome da categoria
+--   total_qtd             : Quantidade vendida
+--   total_valor           : Valor total vendido
+--   pct_variacao_qtd      : Variação % de quantidade vs mês anterior
+--   pct_variacao_valor    : Variação % de valor vs mês anterior
+-- -----------------------------------------------------
+-- Casos de Uso:
+--   1. Identificar categorias em crescimento
+--   2. Detectar sazonalidade
+--   3. Planejar mix de produtos
+-- -----------------------------------------------------
+
+-- -----------------------------------------------------
+-- Tabela: refined.analise_regional
+-- -----------------------------------------------------
+-- Descrição: Performance de vendas por região (UF)
+-- Granularidade: Uma linha por estado/mês
+-- Propósito: Análise geográfica de vendas
+-- -----------------------------------------------------
+-- Campos:
+--   mes_ano                   : Mês de referência
+--   sgl_uf_entrega            : Estado
+--   qtd_pedidos               : Total de pedidos
+--   receita_total             : Receita total do estado
+--   ticket_medio              : Ticket médio
+--   qtd_itens                 : Total de itens vendidos
+--   qtd_produtos_distintos    : Diversidade de produtos
+--   qtd_marcas_distintas      : Diversidade de marcas
+-- -----------------------------------------------------
+-- Casos de Uso:
+--   1. Identificar regiões mais lucrativas
+--   2. Planejar expansão/logística
+--   3. Análise de penetração de marcas por região
+-- -----------------------------------------------------
+
+-- =====================================================
+-- 📈 EXEMPLO DE ANÁLISES
+-- =====================================================
+
+-- Análise 1: Top 10 produtos mais vendidos em todo Brasil em 2024
+-- SELECT 
+--     p.nome_produto,
+--     SUM(mv.total_qtd) as total_vendido,
+--     COUNT(DISTINCT mv.sgl_uf_entrega) as qtd_estados
+-- FROM refined.mais_vendidos_mensal_estado mv
+-- WHERE EXTRACT(YEAR FROM mv.mes_ano) = 2024
+-- GROUP BY p.nome_produto
+-- ORDER BY total_vendido DESC
+-- LIMIT 10;
+
+-- Análise 2: Evolução de vendas mês a mês (trend)
+-- SELECT 
+--     mes_ano,
+--     receita_bruta,
+--     ticket_medio,
+--     pct_cancelamento
+-- FROM refined.kpis_vendas
+-- ORDER BY mes_ano;
+
+-- Análise 3: Marcas que NÃO atingiram meta
+-- SELECT 
+--     nome_marca,
+--     ano,
+--     mes,
+--     vlr_total_vendido,
+--     vlr_meta,
+--     perc_atingimento_meta
+-- FROM refined.performance_mensal_marca
+-- WHERE perc_atingimento_meta < 100
+-- ORDER BY perc_atingimento_meta ASC;
+
+-- =====================================================
+-- 🔒 GOVERNANÇA E SEGURANÇA
+-- =====================================================
+
+/*
+1. LGPD Compliance:
+   - Dados PII separados (cliente_pii)
+   - Pseudonimização via hash (cliente_pseudo)
+   - Auditoria via log_ingestao
+
+2. Qualidade de Dados:
+   - Constraints e validações
+   - Scripts de validação automática
+   - Integridade referencial
+
+3. Performance:
+   - Índices estratégicos
+   - Tabelas refined desnormalizadas
+   - Triggers para atualização automática
+
+4. Rastreabilidade:
+   - Campos criado_em / atualizado_em
+   - Log de ingestões
+   - Versionamento de modelo
+*/
+
+-- =====================================================
+-- FIM DA DOCUMENTAÇÃO
+-- =====================================================
+

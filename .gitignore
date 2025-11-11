@@ -1,0 +1,71 @@
+# ==============================
+# 🐍 Python
+# ==============================
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Ambientes virtuais
+.venv/
+.venv_case/
+venv/
+env/
+
+# Configurações locais
+.env
+.env.local
+*.env.*
+
+# ==============================
+# 🧪 Logs, Cache, e Artefatos
+# ==============================
+*.log
+*.tmp
+*.bak
+*.swp
+.DS_Store
+Thumbs.db
+.cache/
+.ipynb_checkpoints/
+.pytest_cache/
+__pypackages__/
+
+# ==============================
+# 📦 Dependências e Builds
+# ==============================
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# ==============================
+# 🧾 Dados sensíveis e temporários
+# ==============================
+data/raw/
+data/tmp/
+data/trusted/*.csv
+data/trusted/*.parquet
+data/trusted/*.json
+!data/trusted/README.md   # mantém só o README explicando a pasta
+
+# ==============================
+# 🧰 Ferramentas e IDEs
+# ==============================
+.vscode/
+.idea/
+*.iml
+
+# ==============================
+# 🚀 Arquivos específicos do projeto
+# ==============================
+notebooks/
+output/
+reports/
+*.ipynb
+
+# ==============================
+# 📊 Arquivos gerados pelo script
+# ==============================
+logs/
+exports/
+backup/
