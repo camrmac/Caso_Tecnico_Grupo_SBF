@@ -51,7 +51,7 @@ Este projeto implementa um pipeline de dados completo para análise de vendas do
                   ▼
 ┌─────────────────────────────────────────────────────────┐
 │              CAMADA TRUSTED (Silver)                    │
-│  • Dados normalizados (3NF) - SEM prefixos dim_/fato_  │
+│  • Dados normalizados (3NF)   │
 │  • Validações de integridade                            │
 │  • Logs de auditoria                                    │
 │  • Conformidade LGPD (PII separado)                     │
@@ -138,7 +138,7 @@ Este projeto implementa um pipeline de dados completo para análise de vendas do
 ```
 sbf_case_ae_db/
 ├── README.md                          # 📖 Este arquivo
-├── .env.example                       # 🔐 Template de variáveis de ambiente
+├── .env                               # 🔐 Template de variáveis de ambiente
 ├── .gitignore                         # 🚫 Arquivos ignorados pelo Git
 ├── requirements.txt                   # 📦 Dependências Python
 ├── run_pipeline.sh                    # 🚀 Script de execução do pipeline
@@ -167,11 +167,7 @@ sbf_case_ae_db/
 │
 ├── dags/                              # 🌀 DAGs do Airflow
 │   └── sbf_pipeline_dag.py            # DAG principal do pipeline
-│
-└── proposta do projeto/               # 📄 Documentação do case
-    ├── Grupo SBF - Data - Analytics Engineer Case 2 - Candidato.pdf
-    └── Modelo de dados/
-        └── modelo-case-tecnico-ae.txt
+
 ```
 
 ---
@@ -314,9 +310,9 @@ airflow scheduler &
 ### Camada TRUSTED (Schema: `trusted`) - Silver
 
 **Características:**
-- Dados normalizados (3NF) - **SEM prefixos dim_/fato_**
+- Dados normalizados (3NF) 
 - Granularidade: 1 linha = 1 evento/transação
-- Fonte da verdade (single source of truth)
+- Fonte da verdade 
 
 #### Tabelas Mestres Normalizadas
 
@@ -343,7 +339,7 @@ Catálogo de produtos.
 | `criado_em` | TIMESTAMP | Data de criação |
 | `atualizado_em` | TIMESTAMP | Última atualização |
 
-**Tabela: `categoria`** ⭐ NOVO
+**Tabela: `categoria`** 
 Hierarquia de categorias (Departamento > Categoria > Subcategoria).
 
 | Coluna | Tipo | Descrição |
@@ -354,7 +350,7 @@ Hierarquia de categorias (Departamento > Categoria > Subcategoria).
 | `nivel` | INTEGER | Nível hierárquico (1-3) |
 | `caminho_completo` | VARCHAR(500) | Caminho completo (ex: "Calçados > Tênis > Tênis Corrida") |
 
-**Tabela: `geografia`** ⭐ NOVO
+**Tabela: `geografia`** 
 Dados geográficos completos (cidade, UF, região, coordenadas).
 
 | Coluna | Tipo | Descrição |
@@ -367,7 +363,7 @@ Dados geográficos completos (cidade, UF, região, coordenadas).
 | `latitude` | NUMERIC(10,7) | Coordenada latitude |
 | `longitude` | NUMERIC(10,7) | Coordenada longitude |
 
-**Tabela: `canal`** ⭐ NOVO
+**Tabela: `canal`** 
 Canais de vendas (online, offline, marketplace).
 
 | Coluna | Tipo | Descrição |
@@ -377,7 +373,7 @@ Canais de vendas (online, offline, marketplace).
 | `tipo` | VARCHAR(50) | Tipo (Online, Offline, Marketplace) |
 | `plataforma` | VARCHAR(100) | Plataforma (ex: "Site", "App", "Loja Física") |
 
-**Tabela: `campanha`** ⭐ NOVO
+**Tabela: `campanha`** 
 Campanhas de marketing.
 
 | Coluna | Tipo | Descrição |
@@ -405,7 +401,7 @@ Dimensão de datas enriquecida.
 | `tipo_feriado` | VARCHAR(50) | Tipo do feriado (sincronizado com `feriado`) |
 | `descricao` | VARCHAR(50) | Descrição (ex: "Segunda-feira, 01 Janeiro 2024") |
 
-**Tabela: `feriado`** ⭐ NOVO
+**Tabela: `feriado`** 
 Feriados nacionais, estaduais, municipais e comerciais.
 
 | Coluna | Tipo | Descrição |
@@ -452,7 +448,7 @@ Itens dos pedidos.
 | `qtd_produto` | INTEGER | Quantidade |
 | `vlr_unitario` | NUMERIC(10,2) | Valor unitário |
 
-**Tabela: `pedido_status_historico`** ⭐ NOVO
+**Tabela: `pedido_status_historico`** 
 Event log de mudanças de status de pedidos.
 
 | Coluna | Tipo | Descrição |
@@ -463,7 +459,7 @@ Event log de mudanças de status de pedidos.
 | `status_novo` | VARCHAR(50) | Status novo |
 | `data_mudanca` | TIMESTAMP | Data/hora da mudança |
 
-**Tabela: `produto_preco_historico`** ⭐ NOVO
+**Tabela: `produto_preco_historico`** 
 Event log de mudanças de preço de produtos.
 
 | Coluna | Tipo | Descrição |
@@ -475,7 +471,7 @@ Event log de mudanças de preço de produtos.
 | `data_inicio` | DATE | Data de início da vigência |
 | `data_fim` | DATE | Data de fim da vigência (NULL = atual) |
 
-**Tabela: `metas`** ⭐ NOVO
+**Tabela: `metas`** 
 Metas flexíveis e multidimensionais.
 
 | Coluna | Tipo | Descrição |
@@ -580,8 +576,8 @@ TOP produtos mais vendidos por estado/mês.
 | `total_qtd` | INTEGER | Quantidade total vendida |
 | `posicao` | INTEGER | Ranking (1 = mais vendido) |
 
-#### View Materializada: `top10_best_sellers_regiao` ⭐ NOVO
-Top 10 produtos mais vendidos por **região geográfica** e mês (responde demanda dos stakeholders).
+#### View Materializada: `top10_best_sellers_regiao` 
+Top 10 produtos mais vendidos por **região geográfica** e mês 
 
 | Coluna | Tipo | Descrição |
 |--------|------|-----------|
@@ -722,26 +718,5 @@ Todos os scripts geram logs estruturados:
 - Analytics Engineer
 - Caso técnico para o Grupo SBF
 
----
-
-## 📝 Licença
-
-Este projeto foi desenvolvido como parte de um case técnico para o Grupo SBF.
-
----
-
-## 🤝 Contribuindo
-
-Este é um projeto de case técnico, mas sugestões são bem-vindas!
-
----
-
-## 📞 Suporte
-
-Para dúvidas ou problemas, consulte a documentação ou entre em contato.
-
----
-
-**Última atualização**: Novembro 2024
 
 # Caso_Tecnico_Grupo_SBF
